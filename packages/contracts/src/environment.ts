@@ -219,7 +219,9 @@ export function repositoryGroupingKeyOf(identity: RepositoryIdentity): string {
 
 /** Label clients show for a checkout's repository, matching `repositoryGroupingKeyOf`. */
 export function repositoryGroupingDisplayNameOf(identity: RepositoryIdentity): string | undefined {
-  return identity.origin ? identity.origin.displayName : identity.displayName;
+  return identity.origin
+    ? (identity.origin.displayName ?? identity.origin.canonicalKey)
+    : identity.displayName;
 }
 
 export const ScopedProjectRef = Schema.Struct({

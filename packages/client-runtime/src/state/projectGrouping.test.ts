@@ -182,6 +182,21 @@ describe("buildProjectGroups", () => {
     expect(groups[1]?.label).toBe("julius/t3code-fork");
   });
 
+  it("labels a fork by its canonical key when its origin has no display name", () => {
+    const identity = {
+      ...repositoryIdentity,
+      origin: { canonicalKey: "internal-host" },
+    };
+    const projects = [
+      makeProject("fork", "/work/fork", { repositoryIdentity: identity }),
+      makeProject("fork-2", "/work/fork-2", { repositoryIdentity: identity }),
+    ];
+
+    const groups = buildProjectGroups({ projects, settings: settings("repository") });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.label).toBe("internal-host");
+  });
+
   it("keeps physical clones in separate groups when requested", () => {
     const projects = [
       makeProject("t3code", "/work/t3code"),
