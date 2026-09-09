@@ -158,6 +158,30 @@ describe("buildProjectGroups", () => {
     );
   });
 
+  it("keeps a fork apart from its upstream checkout and labels it by its own remote", () => {
+    const fork = makeProject("fork", "/work/t3code-fork", {
+      repositoryIdentity: {
+        ...repositoryIdentity,
+        origin: {
+          canonicalKey: "github.com/julius/t3code-fork",
+          displayName: "julius/t3code-fork",
+        },
+      },
+    });
+    const forkWorktree = makeProject("fork-2", "/work/t3code-fork-2", {
+      repositoryIdentity: fork.repositoryIdentity,
+    });
+    const projects = [makeProject("t3code", "/work/t3code"), fork, forkWorktree];
+
+    const groups = buildProjectGroups({ projects, settings: settings("repository") });
+    expect(groups.map((group) => group.key)).toEqual([
+      "github.com/t3tools/t3code",
+      "github.com/julius/t3code-fork",
+    ]);
+    expect(groups[1]?.members.map((member) => member.project.id)).toEqual(["fork", "fork-2"]);
+    expect(groups[1]?.label).toBe("julius/t3code-fork");
+  });
+
   it("keeps physical clones in separate groups when requested", () => {
     const projects = [
       makeProject("t3code", "/work/t3code"),
