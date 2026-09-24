@@ -2904,7 +2904,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             }),
           );
 
-          assert.deepStrictEqual(status.slashCommands.slice(1), [
+          assert.deepStrictEqual(status.slashCommands.slice(0, 2), [
+            COMPACT_SLASH_COMMAND,
+            {
+              name: "low-priority",
+              description: "Continue now at lower priority when the usage limit is reached",
+            },
+          ]);
+          assert.deepStrictEqual(status.slashCommands.slice(2), [
             {
               name: "review",
               description: "Review a pull request",
@@ -2949,6 +2956,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
           assert.deepStrictEqual(status.slashCommands, [
             COMPACT_SLASH_COMMAND,
+            {
+              name: "low-priority",
+              description: "Continue now at lower priority when the usage limit is reached",
+            },
             {
               name: "ui",
               description: "Explore and refine UI",

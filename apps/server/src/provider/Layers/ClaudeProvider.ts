@@ -58,6 +58,12 @@ const CLAUDE_PRESENTATION = {
   showInteractionModeToggle: true,
   reportsContextWindow: true,
 } as const;
+
+const LOW_PRIORITY_SLASH_COMMAND = {
+  name: "low-priority",
+  description: "Continue now at lower priority when the usage limit is reached",
+} satisfies ServerProviderSlashCommand;
+
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
   for (const part of value.split(/[\s_-]+/g)) {
@@ -537,7 +543,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
-  const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
+  const slashCommands = [
+    COMPACT_SLASH_COMMAND,
+    LOW_PRIORITY_SLASH_COMMAND,
+    ...(capabilities?.slashCommands ?? []),
+  ];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {
