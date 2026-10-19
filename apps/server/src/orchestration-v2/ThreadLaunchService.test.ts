@@ -1024,7 +1024,7 @@ it.effect(
     Effect.gen(function* () {
       const harness = makeHarness({
         hasCommit: () => Effect.succeed(false),
-        git: { hasRefNamed: () => Effect.succeed(false) },
+        git: { hasAnyRef: () => Effect.succeed(false) },
       });
       yield* Effect.gen(function* () {
         const launches = yield* ThreadLaunch.ThreadLaunchService;
@@ -1056,13 +1056,13 @@ it.effect(
 );
 
 it.effect.each([
-  { name: "a base fetched from origin", startFromOrigin: true, remoteBranch: false },
-  { name: "a remote-tracking branch", startFromOrigin: false, remoteBranch: true },
-])("creates a worktree from $name when the repository has no commits", (testCase) =>
+  { name: "the base is fetched from origin", startFromOrigin: true, hasAnyRef: false },
+  { name: "another ref has a commit", startFromOrigin: false, hasAnyRef: true },
+])("keeps the worktree when HEAD has no commit but $name", (testCase) =>
   Effect.gen(function* () {
     const harness = makeHarness({
       hasCommit: ({ refName }) => Effect.succeed(refName === "remote-main-sha"),
-      git: { hasRefNamed: () => Effect.succeed(testCase.remoteBranch) },
+      git: { hasAnyRef: () => Effect.succeed(testCase.hasAnyRef) },
     });
     yield* Effect.gen(function* () {
       const launches = yield* ThreadLaunch.ThreadLaunchService;

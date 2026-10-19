@@ -294,16 +294,14 @@ const make = Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* projects.getById(projectId));
       if (project === undefined) return false;
       const cwd = project.workspaceRoot;
-      const { baseRef } = strategy;
-      if (yield* git.hasCommit({ cwd, refName: "HEAD" })) return false;
-      // Provisioning fetches the base first, which may bring the first commit.
-      if (
-        strategy.startFromOrigin === true &&
-        (yield* git.resolveWorktreeBaseRemote({ cwd, refName: baseRef })) !== null
-      )
+      // Any ref means a commit exists, so a bad base ref still reports its error.
+      if ((yield* git.hasCommit({ cwd, refName: "HEAD" })) || (yield* git.hasAnyRef(cwd)))
         return false;
-      if (yield* git.hasCommit({ cwd, refName: baseRef })) return false;
-      return !(yield* git.hasRefNamed({ cwd, refName: baseRef }));
+      // Provisioning fetches the base first, which may bring the first commit.
+      return !(
+        strategy.startFromOrigin === true &&
+        (yield* git.resolveWorktreeBaseRemote({ cwd, refName: strategy.baseRef })) !== null
+      );
     },
     Effect.orElseSucceed(() => false),
   );
