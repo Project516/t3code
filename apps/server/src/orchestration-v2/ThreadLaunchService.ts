@@ -414,45 +414,66 @@ const make = Effect.gen(function* () {
           }
         }
         if (shouldFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
-        if (
-          branch !== null &&
-          isTemporaryWorktreeBranch(branch) &&
+        const hasCommit = (refName: string) =>
+          git
+            .hasCommit({ cwd: project.workspaceRoot, refName })
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+        // `git worktree add` needs a commit to start from. A repository with
+        // none runs the thread in its project folder, as a non-Git project does.
+        const canCheckOut =
+          (yield* hasCommit("HEAD")) ||
+          (yield* hasCommit(startRef)) ||
           (yield* git
-            .hasCommit({
-              cwd: project.workspaceRoot,
-              refName: `refs/heads/${WORKTREE_BRANCH_PREFIX}`,
-            })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))))
-        ) {
-          branch = flattenTemporaryWorktreeBranchName(branch);
-        }
-        yield* setupTracker.stageStatus(threadId, "checkout", "running");
-        const worktree = yield* git
-          .createWorktree(
-            {
-              cwd: project.workspaceRoot,
-              refName: startRef,
-              newRefName: branch!,
-              baseRefName,
-              path: null,
-            },
-            {
-              progress: {
-                onWorktreeClaimed: (path) =>
-                  Effect.sync(() => {
-                    createdWorktreePath = path;
-                  }),
-                onCheckoutProgress: (progress) =>
-                  setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
+            .hasRefNamed({ cwd: project.workspaceRoot, refName: startRef })
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))));
+        if (!canCheckOut) {
+          branch = null;
+          yield* setupTracker.stageStatus(
+            threadId,
+            "checkout",
+            "skipped",
+            "no commits yet, using project folder",
+          );
+        } else {
+          if (
+            branch !== null &&
+            isTemporaryWorktreeBranch(branch) &&
+            (yield* hasCommit(`refs/heads/${WORKTREE_BRANCH_PREFIX}`))
+          ) {
+            branch = flattenTemporaryWorktreeBranchName(branch);
+          }
+          yield* setupTracker.stageStatus(threadId, "checkout", "running");
+          const worktree = yield* git
+            .createWorktree(
+              {
+                cwd: project.workspaceRoot,
+                refName: startRef,
+                newRefName: branch!,
+                baseRefName,
+                path: null,
               },
-            },
-          )
-          .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
-        worktreePath = worktree.worktree.path;
-        branch = worktree.worktree.refName;
-        createdWorktreePath = worktreePath;
-        yield* setupTracker.update(threadId, (snapshot) => ({ ...snapshot, worktreePath, branch }));
-        yield* setupTracker.stageStatus(threadId, "checkout", "done");
+              {
+                progress: {
+                  onWorktreeClaimed: (path) =>
+                    Effect.sync(() => {
+                      createdWorktreePath = path;
+                    }),
+                  onCheckoutProgress: (progress) =>
+                    setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
+                },
+              },
+            )
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+          worktreePath = worktree.worktree.path;
+          branch = worktree.worktree.refName;
+          createdWorktreePath = worktreePath;
+          yield* setupTracker.update(threadId, (snapshot) => ({
+            ...snapshot,
+            worktreePath,
+            branch,
+          }));
+          yield* setupTracker.stageStatus(threadId, "checkout", "done");
+        }
       }
 
       // A reused worktree is already recorded, and rewriting it could undo
