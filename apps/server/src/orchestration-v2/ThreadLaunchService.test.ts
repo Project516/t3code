@@ -1044,17 +1044,13 @@ it.effect(
           ),
           Stream.runDrain,
         );
-        const { thread } = yield* threads.getThreadProjection(launched.threadId);
+        const { thread, runs } = yield* threads.getThreadProjection(launched.threadId);
         assert.isNull(thread.worktreePath);
         assert.isNull(thread.branch);
         assert.equal(harness.createWorktree.mock.calls.length, 0);
-        const setup = yield* (yield* WorktreeSetupTracker.WorktreeSetupTracker).get(
-          launched.threadId,
-        );
-        assert.deepInclude(
-          setup?.stages.find((stage) => stage.id === "checkout"),
-          { status: "skipped", detail: "no commits yet, using project folder" },
-        );
+        // The orchestrator reads a worktree preparation without a worktree as
+        // failed setup and holds the queue behind it.
+        assert.deepEqual(runs[0]?.workspacePreparation, { type: "root" });
       }).pipe(Effect.provide(harness.layer));
     }),
 );

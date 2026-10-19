@@ -286,6 +286,28 @@ const make = Effect.gen(function* () {
       });
   });
 
+  const hasNoCommitToCheckOut = Effect.fn("ThreadLaunchService.hasNoCommitToCheckOut")(
+    function* (
+      projectId: ProjectId,
+      strategy: Extract<ThreadLaunchWorkspaceStrategy, { readonly type: "worktree" }>,
+    ) {
+      const project = Option.getOrUndefined(yield* projects.getById(projectId));
+      if (project === undefined) return false;
+      const cwd = project.workspaceRoot;
+      const { baseRef } = strategy;
+      if (yield* git.hasCommit({ cwd, refName: "HEAD" })) return false;
+      // Provisioning fetches the base first, which may bring the first commit.
+      if (
+        strategy.startFromOrigin === true &&
+        (yield* git.resolveWorktreeBaseRemote({ cwd, refName: baseRef })) !== null
+      )
+        return false;
+      if (yield* git.hasCommit({ cwd, refName: baseRef })) return false;
+      return !(yield* git.hasRefNamed({ cwd, refName: baseRef }));
+    },
+    Effect.orElseSucceed(() => false),
+  );
+
   const prepareInBackground = Effect.fn("ThreadLaunchService.prepareInBackground")(function* (
     input: PreparationInput,
     threadId: ThreadId,
@@ -414,66 +436,45 @@ const make = Effect.gen(function* () {
           }
         }
         if (shouldFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
-        const hasCommit = (refName: string) =>
-          git
-            .hasCommit({ cwd: project.workspaceRoot, refName })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
-        // `git worktree add` needs a commit to start from. A repository with
-        // none runs the thread in its project folder, as a non-Git project does.
-        const canCheckOut =
-          (yield* hasCommit("HEAD")) ||
-          (yield* hasCommit(startRef)) ||
+        if (
+          branch !== null &&
+          isTemporaryWorktreeBranch(branch) &&
           (yield* git
-            .hasRefNamed({ cwd: project.workspaceRoot, refName: startRef })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))));
-        if (!canCheckOut) {
-          branch = null;
-          yield* setupTracker.stageStatus(
-            threadId,
-            "checkout",
-            "skipped",
-            "no commits yet, using project folder",
-          );
-        } else {
-          if (
-            branch !== null &&
-            isTemporaryWorktreeBranch(branch) &&
-            (yield* hasCommit(`refs/heads/${WORKTREE_BRANCH_PREFIX}`))
-          ) {
-            branch = flattenTemporaryWorktreeBranchName(branch);
-          }
-          yield* setupTracker.stageStatus(threadId, "checkout", "running");
-          const worktree = yield* git
-            .createWorktree(
-              {
-                cwd: project.workspaceRoot,
-                refName: startRef,
-                newRefName: branch!,
-                baseRefName,
-                path: null,
-              },
-              {
-                progress: {
-                  onWorktreeClaimed: (path) =>
-                    Effect.sync(() => {
-                      createdWorktreePath = path;
-                    }),
-                  onCheckoutProgress: (progress) =>
-                    setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
-                },
-              },
-            )
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
-          worktreePath = worktree.worktree.path;
-          branch = worktree.worktree.refName;
-          createdWorktreePath = worktreePath;
-          yield* setupTracker.update(threadId, (snapshot) => ({
-            ...snapshot,
-            worktreePath,
-            branch,
-          }));
-          yield* setupTracker.stageStatus(threadId, "checkout", "done");
+            .hasCommit({
+              cwd: project.workspaceRoot,
+              refName: `refs/heads/${WORKTREE_BRANCH_PREFIX}`,
+            })
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))))
+        ) {
+          branch = flattenTemporaryWorktreeBranchName(branch);
         }
+        yield* setupTracker.stageStatus(threadId, "checkout", "running");
+        const worktree = yield* git
+          .createWorktree(
+            {
+              cwd: project.workspaceRoot,
+              refName: startRef,
+              newRefName: branch!,
+              baseRefName,
+              path: null,
+            },
+            {
+              progress: {
+                onWorktreeClaimed: (path) =>
+                  Effect.sync(() => {
+                    createdWorktreePath = path;
+                  }),
+                onCheckoutProgress: (progress) =>
+                  setupTracker.stage(threadId, "checkout", { percent: progress.percent }),
+              },
+            },
+          )
+          .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+        worktreePath = worktree.worktree.path;
+        branch = worktree.worktree.refName;
+        createdWorktreePath = worktreePath;
+        yield* setupTracker.update(threadId, (snapshot) => ({ ...snapshot, worktreePath, branch }));
+        yield* setupTracker.stageStatus(threadId, "checkout", "done");
       }
 
       // A reused worktree is already recorded, and rewriting it could undo
@@ -830,11 +831,13 @@ const make = Effect.gen(function* () {
 
   const launch: ThreadLaunchService["Service"]["launch"] = Effect.fn("ThreadLaunchService.launch")(
     function* (request) {
-      // Scratch has no Git repository. Normalize before folder allocation so
-      // durable preparation and retries use the thread's own Scratch folder.
+      // Scratch has no Git repository, and `git worktree add` needs a commit to
+      // start from. Normalize before folder allocation so durable preparation
+      // and retries use the thread's own folder.
       const input: ThreadLaunchInput =
         request.workspaceStrategy.type === "worktree" &&
-        (yield* managedFolders.isScratchProject(request.projectId))
+        ((yield* managedFolders.isScratchProject(request.projectId)) ||
+          (yield* hasNoCommitToCheckOut(request.projectId, request.workspaceStrategy)))
           ? { ...request, workspaceStrategy: { type: "root" } }
           : request;
       yield* ProjectCloneTracker.rejectCommandsDuringClone(cloneTracker, {
