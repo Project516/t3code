@@ -50,7 +50,7 @@ async function mountEditor(richTextEnabled: boolean) {
             event,
             keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
             platform: "MacIntel",
-            isMobileViewport: false,
+            isSoftwareKeyboardOpen: false,
             isDraftThread: false,
             sendShortcut: "enter",
           });
